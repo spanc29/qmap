@@ -3,17 +3,18 @@
 import os.path
 import os
 import sys
-import nose
 import datetime
 from shutil import copytree, ignore_patterns, rmtree
 from fabricate import *
 from subprocess import Popen, PIPE
 from PyQt4.QtGui import QApplication
 from ConfigParser import ConfigParser, NoSectionError, NoOptionError
-from nose.plugins.cover import Coverage
 import optparse
-import nose
-
+try:
+    import nose
+except ImportError:
+    import unittest
+    
 ui_sources = ['src/ui_datatimerpicker', 'src/ui_listmodules',
               'src/syncing/ui_sync', 'src/ui_listfeatures', 'src/ui_errorlist']
 
@@ -58,15 +59,15 @@ def compile():
     print " - building resource files..."
     run('pyrcc4', '-o', 'src/resources_rc.py', 'src/resources.qrc')
     run('pyrcc4', '-o', 'src/syncing/resources_rc.py', 'src/syncing/resources.qrc')
+    if os.name == 'nt':
+        print " - building MSSQLSyncer app..."
+        run('MSBuild', '/property:Configuration=Release', '/verbosity:m', \
+            'src/syncing/MSSQLSyncer/MSSQLSyncer.csproj', shell=True, env=env)
 
-    print " - building MSSQLSyncer app..."
-    run('MSBuild', '/property:Configuration=Release', '/verbosity:m', \
-        'src/syncing/MSSQLSyncer/MSSQLSyncer.csproj', shell=True, env=env)
-
-    print " - building Provisioning app..."
-    run('MSBuild', '/property:Configuration=Release', '/verbosity:m', \
-        'provisioner/SqlSyncProvisioner/SqlSyncProvisioner.csproj', \
-        shell=True, env=env)
+        print " - building Provisioning app..."
+        run('MSBuild', '/property:Configuration=Release', '/verbosity:m', \
+            'provisioner/SqlSyncProvisioner/SqlSyncProvisioner.csproj', \
+            shell=True, env=env)
 
     print " - building docs..."
     docs()
@@ -99,8 +100,10 @@ def test():
         Run the tests in the project
     """
     print "Running tests..."
-    return nose.run()
-
+    try:
+        return nose.run()
+    except NameError:
+        return unittest.main()
 
 def build_plugin():
     """
@@ -117,9 +120,16 @@ def build_plugin():
 
     # Copy all the files to the ouput directory
     print "Copying new files..."
-    msg = shell('xcopy', srcpath, buildpath, args, EXCLUDES, silent=False)
-
-    msg = shell('xcopy', bootpath, deploypath, args, silent=False)
+    if os.name == 'nt':
+        msg = shell('xcopy', srcpath, buildpath, args, EXCLUDES, silent=False)
+    else:
+        msg = shell('mkdir', buildpath, '-p', silent=False)
+        msg = shell('cp', srcpath, buildpath, '-r', '*.*', silent=False)
+    
+    if os.name == 'nt':
+        msg = shell('xcopy', bootpath, deploypath, args, silent=False)
+    else:
+        msg = shell('cp', srcpath, buildpath, '-r', '*.*', silent=False)
 
     # Replace version numbers
     version = getVersion()
